@@ -8,7 +8,7 @@ import os
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import cm
+from reportlab.lib.units import cm, inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Table, TableStyle
@@ -83,19 +83,21 @@ if "invoice_items" not in st.session_state:
 # ================= 3. CORE FUNCTIONS (PDF & LOGIC) =================
 
 def add_single_watermark(c, w, h):
-    """ฟังก์ชันวาดรูปลายน้ำ p1.png รูปเดียวกึ่งกลางหน้ากระดาษ"""
+    """วาดลายน้ำรูปเดียว โดยปรับตำแหน่งลงมาจากกึ่งกลาง 1.5 นิ้ว"""
     try:
         c.saveState()
-        # ปรับความเข้มเป็น 18% ตามที่ต้องการ
-        c.setFillAlpha(0.18) 
+        c.setFillAlpha(0.18) # ความเข้ม 18%
         
-        # ตั้งค่าขนาดรูป (ตัวอย่าง 12cm x 12cm)
         img_w = 12*cm
         img_h = 12*cm
         
-        # คำนวณตำแหน่งให้อยู่กึ่งกลางหน้าพอดี
+        # คำนวณตำแหน่ง X (กึ่งกลางแนวนอน)
         x = (w - img_w) / 2
-        y = (h - img_h) / 2
+        
+        # คำนวณตำแหน่ง Y (กึ่งกลางแนวตั้ง - 1.5 นิ้ว)
+        # จุด 0,0 ของ ReportLab อยู่ที่มุมซ้ายล่าง ดังนั้นลบค่าออกคือการเลื่อนลง
+        center_y = (h - img_h) / 2
+        y = center_y - (1.5 * inch)
         
         c.drawImage("p1.png", x, y, width=img_w, height=img_h, mask='auto', preserveAspectRatio=True)
         c.restoreState()
@@ -122,7 +124,7 @@ def create_pdf(inv, items):
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
     
-    # 1. วาดลายน้ำรูปเดียวกึ่งกลาง (อยู่ด้านหลังสุด)
+    # 1. วาดลายน้ำ
     add_single_watermark(c, w, h)
 
     # 2. เนื้อหา V1 (แสดงราคา)
@@ -200,7 +202,7 @@ def create_pdf_v2(inv, items):
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
     
-    # 1. วาดลายน้ำรูปเดียวกึ่งกลาง
+    # 1. วาดลายน้ำ
     add_single_watermark(c, w, h)
 
     # 2. เนื้อหา V2 (แสดงจำนวน)
