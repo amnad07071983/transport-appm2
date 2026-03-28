@@ -61,7 +61,7 @@ transport_fields = [
     "ข้อมูลพนักงานขับรถ-ชื่อ", "ข้อมูลพนักงานขับรถ-เลขใบขับขี่", "ข้อมูลพนักงานขับรถ-เบอร์โทร", "ข้อมูลพนักงานขับรถ-ทะเบียนรถ",
     "ข้อมูลพนักงานขับรถ-วิธีขนส่ง", "ข้อมูลพนักงานขับรถ-วันออกเดินทาง", "ข้อมูลพนักงานขับรถ-เวลาออกเดินทาง",
     "ข้อมูลพนักงานขับรถ-วันที่ถึงปลายทาง", "ข้อมูลพนักงานขับรถ-เวลาที่ถึงปลายทาง",
-    "การยืนยันและรับสินค้า-ผู้ออกเอกสาร", "การยืนยันและรับสินค้า-พนักงานขับรถ", "การยืนยันและรับสินค้า-ผู้รับสินค้า",
+    "การยืนยันและรับสินค้า-ผู้ออกเอกสาร", "การยืนยันและรับสินค้า-พนักงานขับรถ", "การืนยันและรับสินค้า-ผู้รับสินค้า",
     "ผู้จำหน่าย-ชื่อ", "ผู้จำหน่าย-ที่อยู่", "ผู้จำหน่าย-เลขผู้เสียภาษี", "ผู้จำหน่าย-เบอร์โทร",
     "ผู้จำหน่าย-ชื่อเอกสาร", "ผู้จำหน่าย-อธิบายเพิ่ม"
 ]
@@ -100,7 +100,6 @@ def generate_pdf_file(inv_no, items, data_dict=None):
         return st.session_state.get(f"in_{key}", default)
 
     for idx, label in enumerate(page_labels):
-        # --- ลายน้ำตัวเลขจางพิเศษ (0.03) ---
         c.saveState()
         c.setFont(FONT_NAME, 200)
         c.setFillAlpha(0.05) 
@@ -296,28 +295,55 @@ with tabs[3]:
     st.session_state.form_date = st.text_input("วันที่", value=st.session_state.form_date)
     for f in transport_fields[26:]: st.text_input(f, key=f"in_{f}")
 
+# ================= 5. SAVE & UPDATE LOGIC =================
 if st.button("💾 บันทึกและอัปเดต PDF", type="primary", use_container_width=True):
     def get_next_no():
         prefix = f"INV-{datetime.now().year}-{datetime.now().month:02d}"
         if inv_df.empty: return f"{prefix}-0001"
+        
+        # กรองเฉพาะรายการในเดือนปัจจุบัน
         curr = inv_df[inv_df[INV_KEY].astype(str).str.startswith(prefix)]
         if curr.empty: return f"{prefix}-0001"
-        last_val = str(curr[INV_KEY].iloc[-1]).split('-')[-1]
-        return f"{prefix}-{int(last_val)+1:04d}"
+        
+        # ค้นหาค่า suffix ที่สูงที่สุดเพื่อรันเลขต่อให้ถูกต้อง
+        def extract_suffix(inv_no):
+            try: return int(str(inv_no).split('-')[-1])
+            except: return 0
+        
+        last_max = curr[INV_KEY].apply(extract_suffix).max()
+        return f"{prefix}-{last_max + 1:04d}"
     
+    # กำหนดเลขที่จะใช้ (เลขเดิมถ้าแก้ไข เลขใหม่ถ้าระบบรัน)
     final_no = st.session_state.editing_no if st.session_state.editing_no else get_next_no()
+    row_to_save = [final_no, st.session_state.form_date] + [st.session_state[f"in_{f}"] for f in transport_fields]
+
+    # --- บันทึก/อัปเดต Invoices ---
     if st.session_state.editing_no:
         try:
-            for ws in [ws_inv, ws_item]:
-                found = ws.findall(final_no)
-                for cell in reversed(found): ws.delete_rows(cell.row)
-        except: pass
-    ws_inv.append_row([final_no, st.session_state.form_date] + [st.session_state[f"in_{f}"] for f in transport_fields])
+            cell = ws_inv.find(final_no)
+            if cell:
+                ws_inv.update(f"A{cell.row}", [row_to_save])
+        except: 
+            ws_inv.append_row(row_to_save) # Fallback หากหาไม่เจอ
+    else:
+        ws_inv.append_row(row_to_save)
+
+    # --- บันทึก/อัปเดต InvoiceItems (ลบของเก่าใต้เลขบิลนี้แล้วเขียนใหม่เสมอ) ---
+    try:
+        found_items = ws_item.findall(final_no)
+        for cell in reversed(found_items):
+            ws_item.delete_rows(cell.row)
+    except: pass
+    
     for it in st.session_state.invoice_items:
         ws_item.append_row([final_no, it['product'], it['unit'], it['qty'], it['tank'], it['seal']])
+    
+    # อัปเดตไฟล์ PDF และสถานะ
     st.session_state.pdf_buffer = generate_pdf_file(final_no, st.session_state.invoice_items)
     st.session_state.editing_no = final_no
-    st.cache_data.clear(); st.rerun()
+    st.cache_data.clear()
+    st.success(f"บันทึกข้อมูล {final_no} สำเร็จ!")
+    st.rerun()
 
 if st.session_state.pdf_buffer:
     st.download_button("📥 ดาวน์โหลด PDF", data=st.session_state.pdf_buffer, file_name=f"Invoice_{st.session_state.editing_no}.pdf", mime="application/pdf", use_container_width=True)
