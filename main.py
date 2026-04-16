@@ -61,7 +61,7 @@ transport_fields = [
     "ข้อมูลพนักงานขับรถ-ชื่อ", "ข้อมูลพนักงานขับรถ-เลขใบขับขี่", "ข้อมูลพนักงานขับรถ-เบอร์โทร", "ข้อมูลพนักงานขับรถ-ทะเบียนรถ",
     "ข้อมูลพนักงานขับรถ-วิธีขนส่ง", "ข้อมูลพนักงานขับรถ-วันออกเดินทาง", "ข้อมูลพนักงานขับรถ-เวลาออกเดินทาง",
     "ข้อมูลพนักงานขับรถ-วันที่ถึงปลายทาง", "ข้อมูลพนักงานขับรถ-เวลาที่ถึงปลายทาง",
-    "การยืนยันและรับสินค้า-ผู้ออกเอกสาร", "การยืนยันและรับสินค้า-พนักงานขับรถ", "การยืนยันและรับสินค้า-ผู้รับสินค้า",
+    "การยืนยันและรับสินค้า-ผู้ออกเอกสาร", "การืนยันและรับสินค้า-พนักงานขับรถ", "การยืนยันและรับสินค้า-ผู้รับสินค้า",
     "ผู้จำหน่าย-ชื่อ", "ผู้จำหน่าย-ที่อยู่", "ผู้จำหน่าย-เลขผู้เสียภาษี", "ผู้จำหน่าย-เบอร์โทร",
     "ผู้จำหน่าย-ชื่อเอกสาร", "ผู้จำหน่าย-อธิบายเพิ่ม"
 ]
@@ -88,11 +88,9 @@ def generate_pdf_file(inv_no, items, data_dict=None):
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
     
+    # แก้ไข: กำหนดให้เหลือเพียงแผ่นเดียว
     page_labels = [
-        "แผ่นที่ 1 - ต้นฉบับ - ผู้รับน้ำมัน (ปลายทาง)", 
-        "แผ่นที่ 2 - สำเนา - พนักงานขับรถ / ผู้ขนส่ง", 
-        "แผ่นที่ 3 - สำเนา - ฝ่ายบัญชี / ส่วนกลางผู้ส่ง", 
-        "แผ่นที่ 4 - สำเนา - คลังน้ำมัน (ต้นทาง)"
+        "แผ่นที่ 1 - ต้นฉบับ - ผู้รับน้ำมัน (ปลายทาง)"
     ]
 
     def get_val(key, default=""):
@@ -301,11 +299,9 @@ if st.button("💾 บันทึกและอัปเดต PDF", type="pri
         prefix = f"INV-{datetime.now().year}-{datetime.now().month:02d}"
         if inv_df.empty: return f"{prefix}-0001"
         
-        # กรองเฉพาะรายการในเดือนปัจจุบัน
         curr = inv_df[inv_df[INV_KEY].astype(str).str.startswith(prefix)]
         if curr.empty: return f"{prefix}-0001"
         
-        # ค้นหาค่า suffix ที่สูงที่สุดเพื่อรันเลขต่อให้ถูกต้อง
         def extract_suffix(inv_no):
             try: return int(str(inv_no).split('-')[-1])
             except: return 0
@@ -313,22 +309,19 @@ if st.button("💾 บันทึกและอัปเดต PDF", type="pri
         last_max = curr[INV_KEY].apply(extract_suffix).max()
         return f"{prefix}-{last_max + 1:04d}"
     
-    # กำหนดเลขที่จะใช้ (เลขเดิมถ้าแก้ไข เลขใหม่ถ้าระบบรัน)
     final_no = st.session_state.editing_no if st.session_state.editing_no else get_next_no()
     row_to_save = [final_no, st.session_state.form_date] + [st.session_state[f"in_{f}"] for f in transport_fields]
 
-    # --- บันทึก/อัปเดต Invoices ---
     if st.session_state.editing_no:
         try:
             cell = ws_inv.find(final_no)
             if cell:
                 ws_inv.update(f"A{cell.row}", [row_to_save])
         except: 
-            ws_inv.append_row(row_to_save) # Fallback หากหาไม่เจอ
+            ws_inv.append_row(row_to_save)
     else:
         ws_inv.append_row(row_to_save)
 
-    # --- บันทึก/อัปเดต InvoiceItems (ลบของเก่าใต้เลขบิลนี้แล้วเขียนใหม่เสมอ) ---
     try:
         found_items = ws_item.findall(final_no)
         for cell in reversed(found_items):
@@ -338,7 +331,6 @@ if st.button("💾 บันทึกและอัปเดต PDF", type="pri
     for it in st.session_state.invoice_items:
         ws_item.append_row([final_no, it['product'], it['unit'], it['qty'], it['tank'], it['seal']])
     
-    # อัปเดตไฟล์ PDF และสถานะ
     st.session_state.pdf_buffer = generate_pdf_file(final_no, st.session_state.invoice_items)
     st.session_state.editing_no = final_no
     st.cache_data.clear()
